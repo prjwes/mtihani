@@ -1,251 +1,136 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>School Report Card System</title>
-<style>
-  body { font-family: Arial, sans-serif; background: #f2f2f2; margin:0; padding:0; }
-  .hidden { display: none; }
-  .container { max-width: 1000px; margin: 20px auto; padding:20px; background:#fff; border-radius:8px; }
-  input, select, button, textarea { width:90%; padding:8px; margin:8px 0; }
-  button { background:#007BFF; border:none; color:#fff; cursor:pointer; border-radius:4px; }
-  button:hover { background:#0056b3; }
-  .grade-card { display:inline-block; width:120px; margin:10px; text-align:center;
-                border:1px solid #ccc; padding:8px; border-radius:4px; }
-  table { width:100%; border-collapse:collapse; margin:10px 0; }
-  th, td { border:1px solid #ccc; padding:6px; text-align:left; }
-  th { background:#eee; }
-</style>
+  <meta charset="UTF-8">
+  <title>School Report Card System</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:0; background:#ecf0f3; }
+    .container { max-width: 900px; margin: 40px auto; padding: 24px; background:white; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
+    h1 { text-align: center; margin-bottom:24px; }
+    .form-group { margin-bottom:16px; }
+    label { display:block; margin-bottom:4px; font-weight:bold; }
+    input[type=file], select, button { width:100%; padding:10px; border-radius:6px; border:1px solid #ccc; font-size:16px; }
+    button { background:#3498db; color:white; border: none; cursor:pointer; transition: background 0.2s; }
+    button:hover { background:#2980b9; }
+    #downloadContainer a { display:block; margin-top:20px; text-align:center; font-weight:bold; color:#27ae60; }
+    @media (max-width:600px) {
+      .container { margin:20px; padding:16px; }
+      input, select, button { font-size:14px; padding:8px; }
+    }
+  </style>
 </head>
 <body>
 
-<!-- LOGIN -->
-<div id="loginPage" class="container">
-  <h2>Login</h2>
-  <input type="text" id="username" placeholder="Username (TR1–TR6)">
-  <input type="password" id="password" placeholder="Password">
-  <button onclick="login()">Login</button>
-</div>
+<div class="container">
+  <h1>School Report Card System</h1>
 
-<!-- MAIN -->
-<div id="homePage" class="container hidden">
-  <h2>Welcome, <span id="user"></span></h2>
-  <button onclick="logout()">Logout</button>
+  <div class="form-group">
+    <label for="exam1File">Upload Exam 1 (required):</label>
+    <input type="file" id="exam1File" accept=".xlsx, .xls">
+  </div>
 
-  <!-- Add Learner -->
-  <h3>1. Add Learner</h3>
-  <input type="text" id="ln_name" placeholder="Name">
-  <select id="ln_gender"><option>Male</option><option>Female</option></select>
-  <input type="text" id="ln_adm" placeholder="Admission No.">
-  <select id="ln_grade"></select>
-  <input type="number" id="ln_age" placeholder="Age">
-  <button onclick="addLearner()">Add Learner</button>
+  <div class="form-group">
+    <label for="exam2File">Upload Exam 2 (optional):</label>
+    <input type="file" id="exam2File" accept=".xlsx, .xls">
+  </div>
 
-  <!-- Upload Exams -->
-  <h3>2. Upload Exam(s)</h3>
-  <select id="upload_grade"></select>
-  <input type="file" id="exam1File" accept=".xlsx,.xls">
-  <label>Exam 1 (required)</label>
-  <input type="file" id="exam2File" accept=".xlsx,.xls">
-  <label>Exam 2 (optional)</label>
-  <button onclick="processAndGenerate()">Generate Cards</button>
+  <div class="form-group">
+    <button onclick="generateReport()">Generate Report Cards</button>
+  </div>
+
   <div id="downloadContainer"></div>
-
-  <!-- Records -->
-  <h3>3. Records</h3>
-  <button onclick="showSection('rec_learners')">Learners</button>
-  <button onclick="showSection('rec_cards')">Generated Cards</button>
-
-  <div id="rec_learners" class="rec_section hidden"></div>
-  <div id="rec_cards" class="rec_section hidden"><ul id="cardList"></ul></div>
 </div>
 
 <script src="xlsx.full.min.js"></script>
 <script>
-/* --- Data & Persistent Storage --- */
-let DB = JSON.parse(localStorage.getItem('reportDB') || '{}');
-DB.learners = DB.learners || {};
-DB.cards = DB.cards || [];
+  async function generateReport() {
+    const f1 = document.getElementById('exam1File').files[0];
+    const f2 = document.getElementById('exam2File').files[0] || null;
 
-function saveDB(){ localStorage.setItem('reportDB', JSON.stringify(DB)); }
+    if (!f1) {
+      return alert('Please upload Exam 1 file.');
+    }
 
-const USERS = ['TR1','TR2','TR3','TR4','TR5','TR6'];
-let PASSWORDS = JSON.parse(localStorage.getItem('pwSave')|| '{}');
-USERS.forEach(u => { if(!PASSWORDS[u]) PASSWORDS[u] = 'paradise'; });
-localStorage.setItem('pwSave', JSON.stringify(PASSWORDS));
+    const data1 = await readExcel(f1);
+    const data2 = f2 ? await readExcel(f2) : null;
 
-/* --- Login Flow --- */
-function login(){
-  const u = document.getElementById('username').value.trim();
-  const p = document.getElementById('password').value;
-  if(USERS.includes(u) && PASSWORDS[u] === p){
-    localStorage.setItem('user', u);
-    initHome();
-  } else alert('Invalid credentials');
-}
+    const wb = XLSX.utils.book_new();
+    const rows1 = data1;
+    const headers = rows1[0];
+    const studentRows = rows1.slice(1);
 
-function logout(){
-  localStorage.removeItem('user');
-  location.reload();
-}
+    studentRows.forEach((r, idx) => {
+      const name = r[2] || `Student_${idx+1}`;
+      const adm = r[1] || '';
+      const marks1 = r.slice(3, headers.length);
+      const marks2 = data2 ? (data2[idx+1] || []).slice(3, headers.length) : Array(marks1.length).fill('');
 
-function initHome(){
-  document.getElementById('user').innerText = localStorage.getItem('user');
-  document.getElementById('loginPage').classList.add('hidden');
-  document.getElementById('homePage').classList.remove('hidden');
-  setupGradeSelects();
-  refreshLearners();
-  refreshGeneratedCards();
-}
+      const rub1 = marks1.map(m => computeRubric(m));
+      const rub2 = marks2.map(m => computeRubric(m));
 
-/* --- Grade Dropdowns --- */
-function setupGradeSelects(){
-  const g1 = document.getElementById('ln_grade'),
-        g2 = document.getElementById('upload_grade');
-  g1.innerHTML = g2.innerHTML = '';
-  for(let i=1; i<=9; i++){
-    const opt = `<option>Grade ${i}</option>`;
-    g1.innerHTML += opt;
-    g2.innerHTML += opt;
+      const sheet = [
+        ['St Michael Ebushibo School'],
+        [`Name: ${name}`, `Adm: ${adm}`, `Year: ${new Date().getFullYear()}`],
+        ['Subject', 'Exam1 (marks)', 'Rubric1', 'Exam2 (marks)', 'Rubric2', 'Comment'],
+      ];
+
+      const subjects = headers.slice(3);
+      subjects.forEach((subj, i) => {
+        sheet.push([
+          subj || `Subject ${i+1}`,
+          marks1[i] != null ? marks1[i] : '',
+          rub1[i][0],
+          marks2[i] != null ? marks2[i] : '',
+          rub2[i][0],
+          rub1[i][1]
+        ]);
+      });
+
+      sheet.push(['', '', '', '', '', '']);
+      sheet.push(['Class teacherʼs comments:', '', '', '', '', '']);
+      sheet.push(['Head teacherʼs comments:', '', '', '', '', '']);
+      sheet.push(['Term ends on: ______', '', 'Next term begins on: ______']);
+
+      const ws = XLSX.utils.aoa_to_sheet(sheet);
+      XLSX.utils.book_append_sheet(wb, ws, `Card_${name.substring(0,15)}`);
+    });
+
+    const blob = XLSX.write(wb, { bookType:'xlsx', type:'blob' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'Report_Cards.xlsx';
+    link.textContent = '📥 Download Report Cards File';
+    document.getElementById('downloadContainer').innerHTML = '';
+    document.getElementById('downloadContainer').appendChild(link);
   }
-}
 
-/* --- Learner Management --- */
-function addLearner(){
-  const name = document.getElementById('ln_name').value.trim();
-  const gender = document.getElementById('ln_gender').value;
-  const adm = document.getElementById('ln_adm').value.trim();
-  const grade = document.getElementById('ln_grade').value;
-  const age = document.getElementById('ln_age').value;
-  if(!name||!adm||!age) return alert('Please fill all fields.');
-  DB.learners[grade] = DB.learners[grade] || [];
-  DB.learners[grade].push({name,gender,adm,age});
-  saveDB(); refreshLearners();
-  alert('Learner added!');
-}
-
-function refreshLearners(){
-  const div = document.getElementById('rec_learners');
-  div.innerHTML = '<h3>Learners</h3>';
-  for(let gr in DB.learners){
-    div.innerHTML += `<h4>${gr}</h4>`;
-    DB.learners[gr].forEach((ln,i) => {
-      div.innerHTML += `<div>${ln.name} (ADM: ${ln.adm})</div>`;
+  function readExcel(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        resolve(XLSX.utils.sheet_to_json(sheet, { header: 1 }));
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
     });
   }
-}
 
-/* --- Card Generation --- */
-async function processAndGenerate(){
-  const grade = document.getElementById('upload_grade').value;
-  const f1 = document.getElementById('exam1File').files[0];
-  const f2 = document.getElementById('exam2File').files[0];
-
-  if(!f1) return alert('Please upload at least Exam 1 file.');
-
-  const data1 = await readExcel(f1);
-  const data2 = f2 ? await readExcel(f2) : null;
-
-  // Create workbook with one sheet per learner
-  const wb = XLSX.utils.book_new();
-
-  const sheetRows = data1;
-  const names = sheetRows.slice(1).map(r => r[2]);
-
-  names.forEach((nm, idx) => {
-    const r1 = sheetRows[idx + 1];
-    const r2 = data2 ? data2[idx + 1] : null;
-    const adm = r1[1];
-    const m1 = r1.slice(3,12);
-    const m2 = r2 ? r2.slice(3,12) : Array(9).fill('');
-
-    const rub1 = m1.map(x => calcRubric(x));
-    const rub2 = m2.map(x => calcRubric(x));
-
-    const sheet = [
-      ['St Michael Ebushibo School'],
-      [`Name: ${nm}`, `ADM: ${adm}`, grade, `Year: ${new Date().getFullYear()}`],
-      ['Subject','Exam 1 (marks)','Rubric 1','Exam 2 (marks)','Rubric 2','Comment'],
-      ['English',m1[0],rub1[0][0],m2[0],rub2[0][0],rub1[0][1]],
-      ['Kiswahili',m1[1],rub1[1][0],m2[1],rub2[1][0],rub1[1][1]],
-      ['Mathematics',m1[2],rub1[2][0],m2[2],rub2[2][0],rub1[2][1]],
-      ['Science',m1[3],rub1[3][0],m2[3],rub2[3][0],rub1[3][1]],
-      ['C.R.E',m1[4],rub1[4][0],m2[4],rub2[4][0],rub1[4][1]],
-      ['C.A & Sports',m1[5],rub1[5][0],m2[5],rub2[5][0],rub1[5][1]],
-      ['Social Studies',m1[6],rub1[6][0],m2[6],rub2[6][0],rub1[6][1]],
-      ['Agriculture',m1[7],rub1[7][0],m2[7],rub2[7][0],rub1[7][1]],
-      ['', '', '', '', '', ''],
-      ['Class Teacher Remarks:','','','','',''],
-      ['Head Institution Remarks:','','','','',''],
-      ['Term ends on: ______', 'Next term begins on: ______']
-    ];
-
-    const ws = XLSX.utils.aoa_to_sheet(sheet);
-    XLSX.utils.book_append_sheet(wb, ws, nm);
-  });
-
-  const blob = XLSX.write(wb, {bookType:'xlsx', type:'blob'});
-  const url = URL.createObjectURL(blob);
-
-  const dl = document.createElement('a');
-  dl.href = url;
-  dl.download = `ReportCards_${grade}.xlsx`;
-  dl.textContent = 'Download Full Report Cards File';
-  dl.style.display = 'block';
-
-  document.getElementById('downloadContainer').innerHTML = '';
-  document.getElementById('downloadContainer').appendChild(dl);
-
-  DB.cards.push({grade, blobURL: url});
-  saveDB(); refreshGeneratedCards();
-
-  alert('Report cards file generated. Download using the link above.');
-}
-
-/* --- Display Generated Cards --- */
-function refreshGeneratedCards(){
-  const list = document.getElementById('cardList');
-  list.innerHTML = '<h3>Generated Cards Files</h3>';
-  DB.cards.forEach((c, i) => {
-    list.innerHTML += `
-      <li>${c.grade}
-        <a href="${c.blobURL}" download="ReportCards_${c.grade}.xlsx">
-          Download File
-        </a>
-      </li>`;
-  });
-}
-
-/* --- Utils --- */
-function readExcel(file){
-  return new Promise(res => {
-    const r = new FileReader();
-    r.onload = e => {
-      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      res(XLSX.utils.sheet_to_json(sheet, {header:1}));
-    };
-    r.readAsArrayBuffer(file);
-  });
-}
-
-function calcRubric(m){
-  if(m === '' || isNaN(m)) return ['', ''];
-  m = Number(m);
-  if(m <= 10) return [0.5, 'BE2'];
-  if(m <=20) return [1.0, 'BE1'];
-  if(m <=30) return [1.5, 'AE2'];
-  if(m <=40) return [2.0, 'AE1'];
-  if(m <=57) return [2.5, 'ME2'];
-  if(m <=74) return [3.0, 'ME1'];
-  if(m <=89) return [3.5, 'EE2'];
-  return [4.0, 'EE1'];
-}
-
-/* --- Display login/dashboard --- */
-if(localStorage.getItem('user')){
-  initHome();
-}
+  function computeRubric(m) {
+    const mm = parseFloat(m);
+    if (isNaN(mm)) return ['', ''];
+    if (mm <= 10) return [0.5, 'BE2'];
+    if (mm <= 20) return [1.0, 'BE1'];
+    if (mm <= 30) return [1.5, 'AE2'];
+    if (mm <= 40) return [2.0, 'AE1'];
+    if (mm <= 57) return [2.5, 'ME2'];
+    if (mm <= 74) return [3.0, 'ME1'];
+    if (mm <= 89) return [3.5, 'EE2'];
+    return [4.0, 'EE1'];
+  }
 </script>
 </body>
 </html>

@@ -4,15 +4,17 @@
 <meta charset="UTF-8">
 <title>School Report Card System</title>
 <style>
-  body { font-family: Arial,sans-serif; margin:0; padding:0; background:#f2f2f2; }
-  .hidden{display:none;} .container{max-width:1000px;margin:20px auto;padding:20px;background:#fff;border-radius:8px;}
-  input, select, button, textarea{width:90%;padding:8px;margin:8px 0;}
-  button{background:#007BFF;color:#fff;border:none;cursor:pointer;border-radius:4px;}
-  button:hover{background:#0056b3;}
-  .grade-card{display:inline-block;width:120px;margin:10px;text-align:center;border:1px solid #ccc;padding:8px;border-radius:4px;}
-  table{width:100%;border-collapse:collapse;margin:10px 0;}
-  th,td{border:1px solid #ccc;padding:6px;text-align:left;}
-  th{background:#eee;}
+  body { font-family: Arial, sans-serif; background: #f2f2f2; margin:0; padding:0; }
+  .hidden { display: none; }
+  .container { max-width: 1000px; margin: 20px auto; padding:20px; background:#fff; border-radius:8px; }
+  input, select, button, textarea { width:90%; padding:8px; margin:8px 0; }
+  button { background:#007BFF; border:none; color:#fff; cursor:pointer; border-radius:4px; }
+  button:hover { background:#0056b3; }
+  .grade-card { display:inline-block; width:120px; margin:10px; text-align:center;
+                border:1px solid #ccc; padding:8px; border-radius:4px; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; }
+  th, td { border:1px solid #ccc; padding:6px; text-align:left; }
+  th { background:#eee; }
 </style>
 </head>
 <body>
@@ -25,11 +27,12 @@
   <button onclick="login()">Login</button>
 </div>
 
-<!-- HOME -->
+<!-- MAIN -->
 <div id="homePage" class="container hidden">
   <h2>Welcome, <span id="user"></span></h2>
   <button onclick="logout()">Logout</button>
 
+  <!-- Add Learner -->
   <h3>1. Add Learner</h3>
   <input type="text" id="ln_name" placeholder="Name">
   <select id="ln_gender"><option>Male</option><option>Female</option></select>
@@ -38,287 +41,210 @@
   <input type="number" id="ln_age" placeholder="Age">
   <button onclick="addLearner()">Add Learner</button>
 
-  <h3>2. Upload Marks (Excel)</h3>
+  <!-- Upload Exams -->
+  <h3>2. Upload Exam(s)</h3>
   <select id="upload_grade"></select>
   <input type="file" id="exam1File" accept=".xlsx,.xls">
-  <label>Exam 1</label>
+  <label>Exam 1 (required)</label>
   <input type="file" id="exam2File" accept=".xlsx,.xls">
-  <label>Exam 2</label>
-  <button onclick="processExams()">Process Exams & Generate Cards</button>
-  <div id="downloadArea"></div>
+  <label>Exam 2 (optional)</label>
+  <button onclick="processAndGenerate()">Generate Cards</button>
+  <div id="downloadContainer"></div>
 
-  <h3>3. Direct Marks Entry</h3>
-  <select id="dm_grade" onchange="refreshLearnerList()"></select>
-  <div id="directMarkArea"></div>
-
-  <h3>4. Records</h3>
-  <button onclick="showSection('rec_learners')">View Learners</button>
-  <button onclick="showSection('rec_uploads')">View Uploads</button>
-  <button onclick="showSection('rec_cards')">View Cards</button>
+  <!-- Records -->
+  <h3>3. Records</h3>
+  <button onclick="showSection('rec_learners')">Learners</button>
+  <button onclick="showSection('rec_cards')">Generated Cards</button>
 
   <div id="rec_learners" class="rec_section hidden"></div>
-  <div id="rec_uploads" class="rec_section hidden">
-    <table id="uploadsTable">
-      <tr><th>Grade</th><th>Exam</th><th>Filename</th><th>Action</th></tr>
-    </table>
-  </div>
-  <div id="rec_cards" class="rec_section hidden"><ul id="cardsList"></ul></div>
+  <div id="rec_cards" class="rec_section hidden"><ul id="cardList"></ul></div>
 </div>
 
 <script src="xlsx.full.min.js"></script>
 <script>
-// --- Data Initialization ---
+/* --- Data & Persistent Storage --- */
 let DB = JSON.parse(localStorage.getItem('reportDB') || '{}');
 DB.learners = DB.learners || {};
-DB.uploads = DB.uploads || [];
 DB.cards = DB.cards || [];
 
-function saveDB() {
-  localStorage.setItem('reportDB', JSON.stringify(DB));
-}
+function saveDB(){ localStorage.setItem('reportDB', JSON.stringify(DB)); }
 
-// --- Users & Passwords ---
 const USERS = ['TR1','TR2','TR3','TR4','TR5','TR6'];
-let PASSWORDS = JSON.parse(localStorage.getItem('pwSave') || '{}');
-USERS.forEach(u => { if (!PASSWORDS[u]) PASSWORDS[u] = 'paradise'; });
+let PASSWORDS = JSON.parse(localStorage.getItem('pwSave')|| '{}');
+USERS.forEach(u => { if(!PASSWORDS[u]) PASSWORDS[u] = 'paradise'; });
 localStorage.setItem('pwSave', JSON.stringify(PASSWORDS));
 
-// --- Login / Logout ---
-function login() {
+/* --- Login Flow --- */
+function login(){
   const u = document.getElementById('username').value.trim();
   const p = document.getElementById('password').value;
-  if (USERS.includes(u) && PASSWORDS[u] === p) {
+  if(USERS.includes(u) && PASSWORDS[u] === p){
     localStorage.setItem('user', u);
-    setupHome();
-  } else {
-    alert('Invalid credentials');
-  }
+    initHome();
+  } else alert('Invalid credentials');
 }
 
-function logout() {
+function logout(){
   localStorage.removeItem('user');
   location.reload();
 }
 
-function setupHome() {
-  const user = localStorage.getItem('user');
-  document.getElementById('user').innerText = user;
+function initHome(){
+  document.getElementById('user').innerText = localStorage.getItem('user');
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('homePage').classList.remove('hidden');
-  populateGradeSelects();
-  refreshSections();
-  refreshUploadRecords();
-  refreshCardsList();
+  setupGradeSelects();
+  refreshLearners();
+  refreshGeneratedCards();
 }
 
-// --- Populate Grade Dropdowns ---
-function populateGradeSelects() {
-  const sel1 = document.getElementById('ln_grade');
-  const sel2 = document.getElementById('upload_grade');
-  const sel3 = document.getElementById('dm_grade');
-  sel1.innerHTML = sel2.innerHTML = sel3.innerHTML = '';
-  for (let i = 1; i <= 9; i++) {
-    const o = `<option>Grade ${i}</option>`;
-    sel1.innerHTML += o;
-    sel2.innerHTML += o;
-    sel3.innerHTML += o;
+/* --- Grade Dropdowns --- */
+function setupGradeSelects(){
+  const g1 = document.getElementById('ln_grade'),
+        g2 = document.getElementById('upload_grade');
+  g1.innerHTML = g2.innerHTML = '';
+  for(let i=1; i<=9; i++){
+    const opt = `<option>Grade ${i}</option>`;
+    g1.innerHTML += opt;
+    g2.innerHTML += opt;
   }
 }
 
-// --- Add Learner ---
-function addLearner() {
+/* --- Learner Management --- */
+function addLearner(){
   const name = document.getElementById('ln_name').value.trim();
   const gender = document.getElementById('ln_gender').value;
   const adm = document.getElementById('ln_adm').value.trim();
   const grade = document.getElementById('ln_grade').value;
   const age = document.getElementById('ln_age').value;
-  if (!name || !adm || !age) return alert('Complete all fields!');
+  if(!name||!adm||!age) return alert('Please fill all fields.');
   DB.learners[grade] = DB.learners[grade] || [];
-  DB.learners[grade].push({ name, gender, adm, age, marks: {} });
-  saveDB();
+  DB.learners[grade].push({name,gender,adm,age});
+  saveDB(); refreshLearners();
   alert('Learner added!');
-  refreshSections();
 }
 
-// --- Excel Upload & Card Generation ---
-function processExams(){
-  const grade = document.getElementById('upload_grade').value;
-  const f1 = document.getElementById('exam1File').files[0];
-  const f2 = document.getElementById('exam2File').files[0];
-  if (!f1 || !f2) return alert('Select both files!');
-  Promise.all([readExcel(f1), readExcel(f2)]).then(([data1, data2]) => {
-    DB.uploads.push({ grade, exam: 'Exam1', name: f1.name });
-    DB.uploads.push({ grade, exam: 'Exam2', name: f2.name });
-    saveDB(); refreshUploadRecords();
-
-    const names = data1.slice(1).map(r => r[2]);
-    names.forEach((nm, i) => {
-      const row1 = data1[i+1];
-      const row2 = data2[i+1] || row1;
-      const adm = row1[1];
-      const marks1 = row1.slice(3,12);
-      const marks2 = row2.slice(3,12);
-      const rub1 = marks1.map(m => calcRubric(m));
-      const rub2 = marks2.map(m => calcRubric(m));
-
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet([
-        ['St. Michael Ebushibo Comprehensive School'],
-        [`Name: ${nm}`, `ADM: ${adm}`, grade, `Year: ${new Date().getFullYear()}`],
-        ['Subject','Exam1 (marks)','Rubrics1','Exam2 (marks)','Rubrics2','Comment'],
-        ['English',marks1[0],rub1[0][0],marks2[0],rub2[0][0],rub1[0][1]],
-        ['Kiswahili',marks1[1],rub1[1][0],marks2[1],rub2[1][0],rub1[1][1]],
-        ['Mathematics',marks1[2],rub1[2][0],marks2[2],rub2[2][0],rub1[2][1]],
-        ['Integrated Science',marks1[3],rub1[3][0],marks2[3],rub2[3][0],rub1[3][1]],
-        ['C.R.E',marks1[4],rub1[4][0],marks2[4],rub2[4][0],rub1[4][1]],
-        ['C.A & Sports',marks1[5],rub1[5][0],marks2[5],rub2[5][0],rub1[5][1]],
-        ['Pre-technical Studies',marks1[6],rub1[6][0],marks2[6],rub2[6][0],rub1[6][1]],
-        ['Social Studies',marks1[7],rub1[7][0],marks2[7],rub2[7][0],rub1[7][1]],
-        ['Agriculture',marks1[8],rub1[8][0],marks2[8],rub2[8][0],rub1[8][1]],
-        ['','','','','',''],
-        ['Class Teacher Remarks:','','','','',''],
-        ['Head Institution Remarks:','','','','',''],
-        ['Term ends on: ______','Next term begins on: ______']
-      ]);
-      XLSX.utils.book_append_sheet(wb, ws, 'Card');
-      const blob = XLSX.write(wb, { bookType: 'xlsx', type: 'blob' });
-      const url = URL.createObjectURL(blob);
-      DB.cards.push({ learnerName: nm, blobURL: url });
-    });
-    saveDB(); refreshCardsList();
-    alert('Report cards generated!');
-  });
-}
-
-// --- Direct Marks Entry ---
-function refreshLearnerList() {
-  const grade = document.getElementById('dm_grade').value;
-  const area = document.getElementById('directMarkArea');
-  area.innerHTML = '';
-  (DB.learners[grade] || []).forEach((ln, i) => {
-    area.innerHTML += `
-      <div style="border:1px solid #ccc;padding:8px;margin:5px;">
-        <b>${ln.name}</b> (ADM: ${ln.adm})
-        ${['eng','kisw','math','intsc','cre','cas','pretech','sst','agric']
-          .map(s => `<input id="m_${grade}_${i}_${s}" placeholder="${s}" type="number">`).join('')}
-        <button onclick="saveDirectMarks('${grade}', ${i})">Save Marks</button>
-      </div>`;
-  });
-}
-
-function saveDirectMarks(g, i) {
-  const ln = DB.learners[g][i];
-  ['eng','kisw','math','intsc','cre','cas','pretech','sst','agric']
-    .forEach(k => ln.marks[k] = parseFloat(document.getElementById(`m_${g}_${i}_${k}`).value) || 0);
-  saveDB(); alert('Marks saved!');
-}
-
-// --- Record Views & Actions ---
-function showSection(id) {
-  document.querySelectorAll('.rec_section').forEach(el => el.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
-}
-
-function refreshSections() {
+function refreshLearners(){
   const div = document.getElementById('rec_learners');
-  div.innerHTML = '<h3>Learn
-
-ers</h3>';
-  for (let grade in DB.learners) {
-    div.innerHTML += `<h4>${grade}</h4>`;
-    DB.learners[grade].forEach((ln, i) => {
-      div.innerHTML += `
-        <div>${ln.name} (ADM: ${ln.adm})
-          <button onclick="promote('${grade}', ${i})">Promote</button>
-          <button onclick="deleteLearner('${grade}', ${i})">Delete</button>
-        </div>`;
+  div.innerHTML = '<h3>Learners</h3>';
+  for(let gr in DB.learners){
+    div.innerHTML += `<h4>${gr}</h4>`;
+    DB.learners[gr].forEach((ln,i) => {
+      div.innerHTML += `<div>${ln.name} (ADM: ${ln.adm})</div>`;
     });
   }
 }
 
-function refreshUploadRecords() {
-  const tbl = document.getElementById('uploadsTable');
-  tbl.innerHTML = `<tr><th>Grade</th><th>Exam</th><th>Filename</th><th>Action</th></tr>`;
-  DB.uploads.forEach((u, idx) => {
-    tbl.innerHTML += `
-      <tr>
-        <td>${u.grade}</td><td>${u.exam}</td><td>${u.name}</td>
-        <td><button onclick="deleteUpload(${idx})">Delete</button></td>
-      </tr>`;
+/* --- Card Generation --- */
+async function processAndGenerate(){
+  const grade = document.getElementById('upload_grade').value;
+  const f1 = document.getElementById('exam1File').files[0];
+  const f2 = document.getElementById('exam2File').files[0];
+
+  if(!f1) return alert('Please upload at least Exam 1 file.');
+
+  const data1 = await readExcel(f1);
+  const data2 = f2 ? await readExcel(f2) : null;
+
+  // Create workbook with one sheet per learner
+  const wb = XLSX.utils.book_new();
+
+  const sheetRows = data1;
+  const names = sheetRows.slice(1).map(r => r[2]);
+
+  names.forEach((nm, idx) => {
+    const r1 = sheetRows[idx + 1];
+    const r2 = data2 ? data2[idx + 1] : null;
+    const adm = r1[1];
+    const m1 = r1.slice(3,12);
+    const m2 = r2 ? r2.slice(3,12) : Array(9).fill('');
+
+    const rub1 = m1.map(x => calcRubric(x));
+    const rub2 = m2.map(x => calcRubric(x));
+
+    const sheet = [
+      ['St Michael Ebushibo School'],
+      [`Name: ${nm}`, `ADM: ${adm}`, grade, `Year: ${new Date().getFullYear()}`],
+      ['Subject','Exam 1 (marks)','Rubric 1','Exam 2 (marks)','Rubric 2','Comment'],
+      ['English',m1[0],rub1[0][0],m2[0],rub2[0][0],rub1[0][1]],
+      ['Kiswahili',m1[1],rub1[1][0],m2[1],rub2[1][0],rub1[1][1]],
+      ['Mathematics',m1[2],rub1[2][0],m2[2],rub2[2][0],rub1[2][1]],
+      ['Science',m1[3],rub1[3][0],m2[3],rub2[3][0],rub1[3][1]],
+      ['C.R.E',m1[4],rub1[4][0],m2[4],rub2[4][0],rub1[4][1]],
+      ['C.A & Sports',m1[5],rub1[5][0],m2[5],rub2[5][0],rub1[5][1]],
+      ['Social Studies',m1[6],rub1[6][0],m2[6],rub2[6][0],rub1[6][1]],
+      ['Agriculture',m1[7],rub1[7][0],m2[7],rub2[7][0],rub1[7][1]],
+      ['', '', '', '', '', ''],
+      ['Class Teacher Remarks:','','','','',''],
+      ['Head Institution Remarks:','','','','',''],
+      ['Term ends on: ______', 'Next term begins on: ______']
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(sheet);
+    XLSX.utils.book_append_sheet(wb, ws, nm);
   });
+
+  const blob = XLSX.write(wb, {bookType:'xlsx', type:'blob'});
+  const url = URL.createObjectURL(blob);
+
+  const dl = document.createElement('a');
+  dl.href = url;
+  dl.download = `ReportCards_${grade}.xlsx`;
+  dl.textContent = 'Download Full Report Cards File';
+  dl.style.display = 'block';
+
+  document.getElementById('downloadContainer').innerHTML = '';
+  document.getElementById('downloadContainer').appendChild(dl);
+
+  DB.cards.push({grade, blobURL: url});
+  saveDB(); refreshGeneratedCards();
+
+  alert('Report cards file generated. Download using the link above.');
 }
 
-function refreshCardsList() {
-  const ul = document.getElementById('cardsList');
-  ul.innerHTML = '';
-  DB.cards.forEach((c, idx) => {
-    ul.innerHTML += `
-      <li>${c.learnerName} 
-        <a href="${c.blobURL}" download="${c.learnerName}.xlsx">Download</a> 
-        <button onclick="printCard(${idx})">Print</button>
+/* --- Display Generated Cards --- */
+function refreshGeneratedCards(){
+  const list = document.getElementById('cardList');
+  list.innerHTML = '<h3>Generated Cards Files</h3>';
+  DB.cards.forEach((c, i) => {
+    list.innerHTML += `
+      <li>${c.grade}
+        <a href="${c.blobURL}" download="ReportCards_${c.grade}.xlsx">
+          Download File
+        </a>
       </li>`;
   });
 }
 
-// --- CRUD Actions ---
-function promote(grade, idx) {
-  const next = +grade.split(' ')[1] + 1;
-  if (next <= 9) {
-    const ln = DB.learners[grade].splice(idx, 1)[0];
-    const key = 'Grade ' + next;
-    DB.learners[key] = DB.learners[key] || [];
-    DB.learners[key].push(ln);
-    saveDB(); refreshSections();
-  } else {
-    alert('Learner has graduated!');
-  }
-}
-
-function deleteLearner(grade, idx) {
-  if (confirm('Delete ' + DB.learners[grade][idx].name + '?')) {
-    DB.learners[grade].splice(idx, 1);
-    saveDB(); refreshSections();
-  }
-}
-
-function deleteUpload(idx) {
-  if (confirm('Delete this upload?')) {
-    DB.uploads.splice(idx, 1);
-    saveDB(); refreshUploadRecords();
-  }
-}
-
-function printCard(idx) {
-  window.open(DB.cards[idx].blobURL, '_blank');
-}
-
-// --- Helpers ---
-function readExcel(file) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+/* --- Utils --- */
+function readExcel(file){
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      resolve(XLSX.utils.sheet_to_json(sheet, { header: 1 }));
+      res(XLSX.utils.sheet_to_json(sheet, {header:1}));
     };
-    reader.readAsArrayBuffer(file);
+    r.readAsArrayBuffer(file);
   });
 }
 
-function calcRubric(m) {
-  if (m <= 10) return [0.5, 'BE2'];
-  if (m <= 20) return [1.0, 'BE1'];
-  if (m <= 30) return [1.5, 'AE2'];
-  if (m <= 40) return [2.0, 'AE1'];
-  if (m <= 57) return [2.5, 'ME2'];
-  if (m <= 74) return [3.0, 'ME1'];
-  if (m <= 89) return [3.5, 'EE2'];
+function calcRubric(m){
+  if(m === '' || isNaN(m)) return ['', ''];
+  m = Number(m);
+  if(m <= 10) return [0.5, 'BE2'];
+  if(m <=20) return [1.0, 'BE1'];
+  if(m <=30) return [1.5, 'AE2'];
+  if(m <=40) return [2.0, 'AE1'];
+  if(m <=57) return [2.5, 'ME2'];
+  if(m <=74) return [3.0, 'ME1'];
+  if(m <=89) return [3.5, 'EE2'];
   return [4.0, 'EE1'];
 }
 
-// --- Bootstrap if logged in ---
-if (localStorage.getItem('user')) {
-  setupHome();
+/* --- Display login/dashboard --- */
+if(localStorage.getItem('user')){
+  initHome();
 }
 </script>
 </body>

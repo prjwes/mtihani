@@ -2,136 +2,126 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>School Report Card System</title>
+  <title>Report Card Generator</title>
   <style>
-    body { font-family: Arial, sans-serif; margin:0; padding:0; background:#ecf0f3; }
-    .container { max-width: 900px; margin: 40px auto; padding: 24px; background:white; border-radius:12px; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
-    h1 { text-align: center; margin-bottom:24px; }
-    .form-group { margin-bottom:16px; }
-    label { display:block; margin-bottom:4px; font-weight:bold; }
-    input[type=file], select, button { width:100%; padding:10px; border-radius:6px; border:1px solid #ccc; font-size:16px; }
-    button { background:#3498db; color:white; border: none; cursor:pointer; transition: background 0.2s; }
-    button:hover { background:#2980b9; }
-    #downloadContainer a { display:block; margin-top:20px; text-align:center; font-weight:bold; color:#27ae60; }
-    @media (max-width:600px) {
-      .container { margin:20px; padding:16px; }
-      input, select, button { font-size:14px; padding:8px; }
-    }
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-weight: bold; }
+    input[type=file], button { width: 100%; padding: 10px; font-size: 16px; }
+    button { background: #28a745; color: white; border: none; border-radius: 4px; }
+    button:hover { background: #218838; }
+    #downloadLink { margin-top: 20px; font-size: 18px; }
   </style>
 </head>
 <body>
 
-<div class="container">
-  <h1>School Report Card System</h1>
+  <h2>Report Card Generator</h2>
 
   <div class="form-group">
     <label for="exam1File">Upload Exam 1 (required):</label>
-    <input type="file" id="exam1File" accept=".xlsx, .xls">
+    <input type="file" id="exam1File" accept=".xlsx,.xls">
   </div>
 
   <div class="form-group">
     <label for="exam2File">Upload Exam 2 (optional):</label>
-    <input type="file" id="exam2File" accept=".xlsx, .xls">
+    <input type="file" id="exam2File" accept=".xlsx,.xls">
   </div>
 
-  <div class="form-group">
-    <button onclick="generateReport()">Generate Report Cards</button>
-  </div>
+  <button onclick="generate()">Generate Report Cards</button>
 
-  <div id="downloadContainer"></div>
-</div>
+  <a id="downloadLink" class="hidden"></a>
 
-<script src="xlsx.full.min.js"></script>
-<script>
-  async function generateReport() {
-    const f1 = document.getElementById('exam1File').files[0];
-    const f2 = document.getElementById('exam2File').files[0] || null;
+  <script src="xlsx.full.min.js"></script>
+  <script>
+    async function generate() {
+      const f1 = document.getElementById('exam1File').files[0];
+      const f2 = document.getElementById('exam2File').files[0] || null;
 
-    if (!f1) {
-      return alert('Please upload Exam 1 file.');
+      if (!f1) {
+        alert('Please upload Exam 1 file.');
+        return;
+      }
+
+      const data1 = await readSheet(f1);
+      const data2 = f2 ? await readSheet(f2) : null;
+
+      const wb = XLSX.utils.book_new();
+
+      const headers = data1[0];
+      const rows = data1.slice(1);
+
+      for (let i = 0; i < rows.length; i++) {
+        const r1 = rows[i];
+        const r2 = data2 ? data2[i+1] : null;
+
+        const name = r1[2] || `Student${i+1}`;
+        const adm = r1[1] || '';
+        const marks1 = r1.slice(3);
+        const marks2 = r2 ? r2.slice(3) : Array(marks1.length).fill('');
+
+        const rub1 = marks1.map(m => calcRubric(m));
+        const rub2 = marks2.map(m => calcRubric(m));
+
+        const sheet = [];
+        sheet.push(['St Michael Ebushibo School']);
+        sheet.push([`Name: ${name}`, `Adm: ${adm}`, `Year: ${new Date().getFullYear()}`]);
+        sheet.push(['Subject','Exam 1','Rubric 1','Exam 2','Rubric 2','Comment']);
+
+        headers.slice(3).forEach((subj, idx) => {
+          sheet.push([
+            subj || `Subj${idx+1}`,
+            marks1[idx] !== undefined ? marks1[idx] : '',
+            rub1[idx][0],
+            marks2[idx] !== undefined ? marks2[idx] : '',
+            rub2[idx][0],
+            rub1[idx][1]
+          ]);
+        });
+
+        sheet.push(['','','','','','']);
+        sheet.push(['Class Teacher Comments:', '','','','','']);
+        sheet.push(['Head Teacher Comments:', '','','','','']);
+        sheet.push(['Term ends on: ____', 'Next term begins on: ____']);
+
+        const ws = XLSX.utils.aoa_to_sheet(sheet);
+        XLSX.utils.book_append_sheet(wb, ws, name.substring(0,15));
+      }
+
+      const blob = XLSX.write(wb, {bookType:'xlsx', type:'blob'});
+      const url = URL.createObjectURL(blob);
+      const link = document.getElementById('downloadLink');
+      link.href = url;
+      link.download = 'ReportCards.xlsx';
+      link.textContent = '📥 Download ReportCards.xlsx';
+      link.classList.remove('hidden');
     }
 
-    const data1 = await readExcel(f1);
-    const data2 = f2 ? await readExcel(f2) : null;
-
-    const wb = XLSX.utils.book_new();
-    const rows1 = data1;
-    const headers = rows1[0];
-    const studentRows = rows1.slice(1);
-
-    studentRows.forEach((r, idx) => {
-      const name = r[2] || `Student_${idx+1}`;
-      const adm = r[1] || '';
-      const marks1 = r.slice(3, headers.length);
-      const marks2 = data2 ? (data2[idx+1] || []).slice(3, headers.length) : Array(marks1.length).fill('');
-
-      const rub1 = marks1.map(m => computeRubric(m));
-      const rub2 = marks2.map(m => computeRubric(m));
-
-      const sheet = [
-        ['St Michael Ebushibo School'],
-        [`Name: ${name}`, `Adm: ${adm}`, `Year: ${new Date().getFullYear()}`],
-        ['Subject', 'Exam1 (marks)', 'Rubric1', 'Exam2 (marks)', 'Rubric2', 'Comment'],
-      ];
-
-      const subjects = headers.slice(3);
-      subjects.forEach((subj, i) => {
-        sheet.push([
-          subj || `Subject ${i+1}`,
-          marks1[i] != null ? marks1[i] : '',
-          rub1[i][0],
-          marks2[i] != null ? marks2[i] : '',
-          rub2[i][0],
-          rub1[i][1]
-        ]);
+    function readSheet(file) {
+      return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          res(XLSX.utils.sheet_to_json(sheet, {header:1}));
+        };
+        reader.onerror = rej;
+        reader.readAsArrayBuffer(file);
       });
+    }
 
-      sheet.push(['', '', '', '', '', '']);
-      sheet.push(['Class teacherʼs comments:', '', '', '', '', '']);
-      sheet.push(['Head teacherʼs comments:', '', '', '', '', '']);
-      sheet.push(['Term ends on: ______', '', 'Next term begins on: ______']);
-
-      const ws = XLSX.utils.aoa_to_sheet(sheet);
-      XLSX.utils.book_append_sheet(wb, ws, `Card_${name.substring(0,15)}`);
-    });
-
-    const blob = XLSX.write(wb, { bookType:'xlsx', type:'blob' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'Report_Cards.xlsx';
-    link.textContent = '📥 Download Report Cards File';
-    document.getElementById('downloadContainer').innerHTML = '';
-    document.getElementById('downloadContainer').appendChild(link);
-  }
-
-  function readExcel(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        resolve(XLSX.utils.sheet_to_json(sheet, { header: 1 }));
-      };
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(file);
-    });
-  }
-
-  function computeRubric(m) {
-    const mm = parseFloat(m);
-    if (isNaN(mm)) return ['', ''];
-    if (mm <= 10) return [0.5, 'BE2'];
-    if (mm <= 20) return [1.0, 'BE1'];
-    if (mm <= 30) return [1.5, 'AE2'];
-    if (mm <= 40) return [2.0, 'AE1'];
-    if (mm <= 57) return [2.5, 'ME2'];
-    if (mm <= 74) return [3.0, 'ME1'];
-    if (mm <= 89) return [3.5, 'EE2'];
-    return [4.0, 'EE1'];
-  }
-</script>
+    function calcRubric(m) {
+      const mm = parseFloat(m);
+      if (isNaN(mm)) return ['', ''];
+      if (mm <= 10) return [0.5,'BE2'];
+      if (mm <= 20) return [1.0,'BE1'];
+      if (mm <= 30) return [1.5,'AE2'];
+      if (mm <= 40) return [2.0,'AE1'];
+      if (mm <= 57) return [2.5,'ME2'];
+      if (mm <= 74) return [3.0,'ME1'];
+      if (mm <= 89) return [3.5,'EE2'];
+      return [4.0,'EE1'];
+    }
+  </script>
 </body>
 </html>
  

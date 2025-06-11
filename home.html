@@ -1,0 +1,77 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <title>Home</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <h1>Welcome, <%= user.name %></h1>
+  <div class="user-actions">
+    <form method="POST" action="/change-name">
+      <label>Change Name: <input type="text" name="name" value="<%= user.name %>"></label>
+      <button type="submit">Update</button>
+    </form>
+    <form method="POST" action="/change-password">
+      <label>Current Password: <input type="password" name="currentPassword" required></label>
+      <label>New Password: <input type="password" name="newPassword" required></label>
+      <button type="submit">Change Password</button>
+    </form>
+    <form method="POST" action="/reset-password">
+      <button type="submit">Reset Password to 'paradise'</button>
+    </form>
+    <a href="/logout">Logout</a>
+  </div>
+  <div class="containers">
+    <div class="container"><a href="/add-learner">Add Learners</a></div>
+    <div class="container"><a href="/upload-marks">Upload Marks</a></div>
+    <div class="container"><a href="/records">Records</a></div>
+  </div>
+  <div class="grade-grid">
+    <% for (let i = 1; i <= 9; i++) { %>
+      <div class="grade-container">
+        <h2>Grade <%= i %></h2>
+        <a href="/upload/grade/<%= i %>">Upload</a>
+      </div>
+    <% } %>
+  </div>
+</body>
+</html>

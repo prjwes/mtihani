@@ -1,0 +1,88 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <title>View Uploads</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <h1>View Uploads</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Adm</th>
+        <th>Grade</th>
+        <th>Subject</th>
+        <th>Exam Type</th>
+        <th>Mark</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% marks.forEach(mark => { %>
+        <tr>
+          <td><%= mark.name %></td>
+          <td><%= mark.adm_number %></td>
+          <td><%= mark.grade %></td>
+          <td><%= mark.subject %></td>
+          <td><%= mark.exam_type %></td>
+          <td>
+            <form method="POST" action="/records/learners/marks/edit">
+              <input type="hidden" name="markId" value="<%= mark.id %>">
+              <input type="number" name="mark" value="<%= mark.mark %>">
+              <button type="submit">Edit</button>
+            </form>
+          </td>
+          <td>
+            <form method="POST" action="/records/learners/marks/delete">
+              <input type="hidden" name="markId" value="<%= mark.id %>">
+              <input type="hidden" name="learnerId" value="<%= mark.learner_id %>">
+              <button type="submit" onclick="return confirm('Delete this mark?')">Delete</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <a href="/records">Back</a>
+</body>
+</html>
